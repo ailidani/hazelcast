@@ -32,7 +32,6 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.io.IOException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
@@ -48,17 +47,13 @@ import static org.junit.Assert.fail;
 public class ClientDurableRetrieveResultTest {
 
     private final TestHazelcastFactory hazelcastFactory = new TestHazelcastFactory();
+
     private HazelcastInstance client;
     private HazelcastInstance instance1;
     private HazelcastInstance instance2;
 
-    @After
-    public void tearDown() {
-        hazelcastFactory.terminateAll();
-    }
-
     @Before
-    public void setup() throws IOException {
+    public void setup() {
         instance1 = hazelcastFactory.newHazelcastInstance();
         instance2 = hazelcastFactory.newHazelcastInstance();
         hazelcastFactory.newHazelcastInstance();
@@ -66,8 +61,28 @@ public class ClientDurableRetrieveResultTest {
         client = hazelcastFactory.newHazelcastClient();
     }
 
+    @After
+    public void tearDown() {
+        hazelcastFactory.terminateAll();
+    }
+
     @Test
-    public void testRetrieveAndDispose_WhenClientDown() throws ExecutionException, InterruptedException {
+    public void testDisposeResult() throws Exception {
+        String name = randomString();
+        String key = generateKeyOwnedBy(instance1);
+
+        DurableExecutorService executorService = client.getDurableExecutorService(name);
+        BasicTestCallable task = new BasicTestCallable();
+        DurableExecutorServiceFuture<String> future = executorService.submitToKeyOwner(task, key);
+        future.get();
+        executorService.disposeResult(future.getTaskId());
+
+        Future<Object> resultFuture = executorService.retrieveResult(future.getTaskId());
+        assertNull(resultFuture.get());
+    }
+
+    @Test
+    public void testRetrieveAndDispose_WhenClientDown() throws Exception {
         String name = randomString();
 
         DurableExecutorService executorService = client.getDurableExecutorService(name);
@@ -81,12 +96,12 @@ public class ClientDurableRetrieveResultTest {
         Future<Boolean> future = executorService.retrieveAndDisposeResult(taskId);
         assertTrue(future.get());
 
-        Future<Object> f = executorService.retrieveResult(taskId);
-        assertNull(f.get());
+        Future<Object> resultFuture = executorService.retrieveResult(taskId);
+        assertNull(resultFuture.get());
     }
 
     @Test
-    public void testRetrieveAndDispose_WhenOwnerMemberDown() throws ExecutionException, InterruptedException {
+    public void testRetrieveAndDispose_WhenOwnerMemberDown() throws Exception {
         String name = randomString();
         String key = generateKeyOwnedBy(instance2);
 
@@ -98,12 +113,12 @@ public class ClientDurableRetrieveResultTest {
         Future<Boolean> future = executorService.retrieveAndDisposeResult(taskId);
         assertTrue(future.get());
 
-        Future<Boolean> f = executorService.retrieveResult(taskId);
-        assertNull(f.get());
+        Future<Boolean> resultFuture = executorService.retrieveResult(taskId);
+        assertNull(resultFuture.get());
     }
 
     @Test
-    public void testRetrieve_WhenSubmitterMemberDown() throws ExecutionException, InterruptedException {
+    public void testRetrieve_WhenSubmitterMemberDown() throws Exception {
         String name = randomString();
 
         DurableExecutorService executorService = client.getDurableExecutorService(name);
@@ -119,7 +134,7 @@ public class ClientDurableRetrieveResultTest {
     }
 
     @Test
-    public void testRetrieve_WhenOwnerMemberDown() throws ExecutionException, InterruptedException {
+    public void testRetrieve_WhenOwnerMemberDown() throws Exception {
         String name = randomString();
         String key = generateKeyOwnedBy(instance2);
 
@@ -133,7 +148,7 @@ public class ClientDurableRetrieveResultTest {
     }
 
     @Test
-    public void testRetrieve_WhenResultOverwritten() throws ExecutionException, InterruptedException {
+    public void testRetrieve_WhenResultOverwritten() throws Exception {
         String name = randomString();
         DurableExecutorService executorService = client.getDurableExecutorService(name);
         DurableExecutorServiceFuture<String> future = executorService.submitToKeyOwner(new BasicTestCallable(), name);
@@ -144,9 +159,9 @@ public class ClientDurableRetrieveResultTest {
             executorService.submitToKeyOwner(new BasicTestCallable(), name);
         }
 
-        Future<Object> f = executorService.retrieveResult(taskId);
+        Future<Object> resultFuture = executorService.retrieveResult(taskId);
         try {
-            f.get();
+            resultFuture.get();
             fail();
         } catch (ExecutionException e) {
             assertTrue(e.getCause() instanceof StaleTaskIdException);

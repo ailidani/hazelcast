@@ -43,6 +43,13 @@ public class AwaitOperation extends AbstractLockOperation
         this.conditionId = conditionId;
     }
 
+    public AwaitOperation(ObjectNamespace namespace, Data key, long threadId, long timeout, String conditionId,
+                          long referenceId) {
+        super(namespace, key, threadId, timeout);
+        this.conditionId = conditionId;
+        setReferenceCallId(referenceId);
+    }
+
     @Override
     public void run() throws Exception {
         LockStoreImpl lockStore = getLockStore();
@@ -58,6 +65,13 @@ public class AwaitOperation extends AbstractLockOperation
             lockStore.removeAwait(key, conditionId, getCallerUuid(), threadId);
             response = true;
         }
+    }
+
+    void runExpired() {
+        LockStoreImpl lockStore = getLockStore();
+        boolean locked = lockStore.lock(key, getCallerUuid(), threadId, getReferenceCallId(), leaseTime);
+        assert locked : "Expired await operation should have acquired the lock!";
+        sendResponse(false);
     }
 
     @Override

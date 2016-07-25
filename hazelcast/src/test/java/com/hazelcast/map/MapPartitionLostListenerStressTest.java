@@ -1,7 +1,6 @@
 package com.hazelcast.map;
 
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.map.listener.MapPartitionLostListener;
 import com.hazelcast.partition.AbstractPartitionLostListenerTest;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParametersRunnerFactory;
@@ -23,33 +22,7 @@ import static org.junit.Assert.assertTrue;
 @RunWith(Parameterized.class)
 @Parameterized.UseParametersRunnerFactory(HazelcastParametersRunnerFactory.class)
 @Category(SlowTest.class)
-public class MapPartitionLostListenerStressTest
-        extends AbstractPartitionLostListenerTest {
-
-    public static class EventCollectingMapPartitionLostListener
-            implements MapPartitionLostListener {
-
-        private final List<MapPartitionLostEvent> events = new ArrayList<MapPartitionLostEvent>();
-
-        private final int backupCount;
-
-        public EventCollectingMapPartitionLostListener(int backupCount) {
-            this.backupCount = backupCount;
-        }
-
-        @Override
-        public synchronized void partitionLost(MapPartitionLostEvent event) {
-            this.events.add(event);
-        }
-
-        public synchronized List<MapPartitionLostEvent> getEvents() {
-            return new ArrayList<MapPartitionLostEvent>(events);
-        }
-
-        public int getBackupCount() {
-            return backupCount;
-        }
-    }
+public class MapPartitionLostListenerStressTest extends AbstractPartitionLostListenerTest {
 
     @Parameterized.Parameters(name = "numberOfNodesToCrash:{0},withData:{1},nodeLeaveType:{2},shouldExpectPartitionLostEvents:{3}")
     public static Collection<Object[]> parameters() {
@@ -90,15 +63,14 @@ public class MapPartitionLostListenerStressTest
     }
 
     @Test
-    public void testMapPartitionLostListener()
-            throws InterruptedException {
+    public void testMapPartitionLostListener() throws InterruptedException {
         List<HazelcastInstance> instances = getCreatedInstancesShuffledAfterWarmedUp();
 
         List<HazelcastInstance> survivingInstances = new ArrayList<HazelcastInstance>(instances);
         List<HazelcastInstance> terminatingInstances = survivingInstances.subList(0, numberOfNodesToCrash);
         survivingInstances = survivingInstances.subList(numberOfNodesToCrash, instances.size());
 
-        List<EventCollectingMapPartitionLostListener> listeners = registerListeners(survivingInstances.get(0));
+        List<TestEventCollectingMapPartitionLostListener> listeners = registerListeners(survivingInstances.get(0));
 
         if (withData) {
             populateMaps(survivingInstances.get(0));
@@ -115,7 +87,7 @@ public class MapPartitionLostListenerStressTest
                 assertListenerInvocationsEventually(log, i, numberOfNodesToCrash, listeners.get(i), survivingPartitions);
             }
         } else {
-            for (final EventCollectingMapPartitionLostListener listener : listeners) {
+            for (final TestEventCollectingMapPartitionLostListener listener : listeners) {
                 assertTrueAllTheTime(new AssertTask() {
                     @Override
                     public void run()
@@ -127,35 +99,18 @@ public class MapPartitionLostListenerStressTest
         }
     }
 
-    private void assertListenerInvocationsEventually(final String log, final int index, final int numberOfNodesToCrash,
-                                                     final EventCollectingMapPartitionLostListener listener,
-                                                     final Map<Integer, Integer> survivingPartitions) {
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run()
-                    throws Exception {
-                if (index < numberOfNodesToCrash) {
-                    assertLostPartitions(log, listener, survivingPartitions);
-                } else {
-                    String message = log + " listener-" + index + " should not be invoked!";
-                    assertTrue(message, listener.getEvents().isEmpty());
-                }
-            }
-        });
-    }
-
-    private List<EventCollectingMapPartitionLostListener> registerListeners(HazelcastInstance instance) {
-        List<EventCollectingMapPartitionLostListener> listeners = new ArrayList<EventCollectingMapPartitionLostListener>();
+    private List<TestEventCollectingMapPartitionLostListener> registerListeners(HazelcastInstance instance) {
+        List<TestEventCollectingMapPartitionLostListener> listeners = new ArrayList<TestEventCollectingMapPartitionLostListener>();
         for (int i = 0; i < getNodeCount(); i++) {
-            EventCollectingMapPartitionLostListener listener = new EventCollectingMapPartitionLostListener(i);
+            TestEventCollectingMapPartitionLostListener listener = new TestEventCollectingMapPartitionLostListener(i);
             instance.getMap(getIthMapName(i)).addPartitionLostListener(listener);
             listeners.add(listener);
         }
         return listeners;
     }
 
-    private void assertLostPartitions(String log, EventCollectingMapPartitionLostListener listener,
-                                      Map<Integer, Integer> survivingPartitions) {
+    private static void assertLostPartitions(String log, TestEventCollectingMapPartitionLostListener listener,
+                                             Map<Integer, Integer> survivingPartitions) {
         List<MapPartitionLostEvent> events = listener.getEvents();
         assertFalse(survivingPartitions.isEmpty());
 
@@ -168,5 +123,22 @@ public class MapPartitionLostListenerStressTest
                 assertTrue(message, survivingReplicaIndex > listener.getBackupCount());
             }
         }
+    }
+
+    private static void assertListenerInvocationsEventually(final String log, final int index, final int numberOfNodesToCrash,
+                                                            final TestEventCollectingMapPartitionLostListener listener,
+                                                            final Map<Integer, Integer> survivingPartitions) {
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run()
+                    throws Exception {
+                if (index < numberOfNodesToCrash) {
+                    assertLostPartitions(log, listener, survivingPartitions);
+                } else {
+                    String message = log + " listener-" + index + " should not be invoked!";
+                    assertTrue(message, listener.getEvents().isEmpty());
+                }
+            }
+        });
     }
 }

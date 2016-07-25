@@ -25,50 +25,89 @@ import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.ParallelTest;
 import com.hazelcast.test.annotation.QuickTest;
+import org.hamcrest.core.IsSame;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
+import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
+import org.mockito.Mockito;
 
+import static com.hazelcast.map.impl.PartitioningStrategyFactory.getPartitioningStrategy;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
+import static org.mockito.Mockito.mock;
 
-/**
- *
- */
 @RunWith(HazelcastParallelClassRunner.class)
 @Category({QuickTest.class, ParallelTest.class})
 public class PartitioningStrategyFactoryTest extends HazelcastTestSupport {
 
+    @Rule
+    public ExpectedException expectedException = ExpectedException.none();
+
     @Test
-    public void getPartitioningStrategy_whenConfigNull()
-            throws Exception {
+    public void testUtilityClassWithPrivateConstructor() {
+        assertUtilityConstructor(PartitioningStrategyFactory.class);
+    }
+
+    @Test
+    public void whenConfigNull_getPartitioningStrategy_returnsNull() {
         HazelcastInstance hz = createHazelcastInstance();
         NodeEngine nodeEngine = getNodeEngineImpl(hz);
-        PartitioningStrategy partitioningStrategy = PartitioningStrategyFactory.getPartitioningStrategy(nodeEngine, "map", null);
+        PartitioningStrategy partitioningStrategy = getPartitioningStrategy(nodeEngine, "map", null);
         assertNull(partitioningStrategy);
     }
 
     @Test
-    public void getPartitioningStrategy_whenPartitioningStrategyDefined()
-            throws Exception {
+    public void whenPartitioningStrategyDefined_getPartitioningStrategy_returnsSameInstance() {
         HazelcastInstance hz = createHazelcastInstance();
         NodeEngine nodeEngine = getNodeEngineImpl(hz);
         PartitioningStrategy configuredPartitioningStrategy = new StringPartitioningStrategy();
         PartitioningStrategyConfig cfg = new PartitioningStrategyConfig(configuredPartitioningStrategy);
-        PartitioningStrategy partitioningStrategy = PartitioningStrategyFactory.getPartitioningStrategy(nodeEngine, "map", cfg);
+        PartitioningStrategy partitioningStrategy = getPartitioningStrategy(nodeEngine, "map", cfg);
         assertSame(configuredPartitioningStrategy, partitioningStrategy);
     }
 
     @Test
-    public void getPartitioningStrategy_whenPartitioningStrategyClassDefined()
-            throws Exception {
+    public void whenPartitioningStrategyClassDefined_getPartitioningStrategy_returnsNewInstance() {
         HazelcastInstance hz = createHazelcastInstance();
         NodeEngine nodeEngine = getNodeEngineImpl(hz);
         PartitioningStrategyConfig cfg = new PartitioningStrategyConfig();
         cfg.setPartitioningStrategyClass("com.hazelcast.partition.strategy.StringPartitioningStrategy");
-        PartitioningStrategy partitioningStrategy = PartitioningStrategyFactory.getPartitioningStrategy(nodeEngine, "map", cfg);
+        PartitioningStrategy partitioningStrategy = getPartitioningStrategy(nodeEngine, "map", cfg);
         assertEquals(StringPartitioningStrategy.class, partitioningStrategy.getClass());
     }
 
+    // when a partitioning strategy has already been cached, then another invocation to obtain the partitioning
+    // strategy for the same map name retrieves the same instance
+    @Test
+    public void whenStrategyForMapAlreadyDefined_getPartitioningStrategy_returnsSameInstance() {
+        HazelcastInstance hz = createHazelcastInstance();
+        NodeEngine nodeEngine = getNodeEngineImpl(hz);
+        PartitioningStrategyConfig cfg = new PartitioningStrategyConfig();
+        cfg.setPartitioningStrategyClass("com.hazelcast.partition.strategy.StringPartitioningStrategy");
+        // when we have already obtained the partitioning strategy for a given map name
+        PartitioningStrategy partitioningStrategy = getPartitioningStrategy(nodeEngine, "map", cfg);
+        PartitioningStrategy cachedPartitioningStrategy = getPartitioningStrategy(nodeEngine, "map", cfg);
+        assertSame(partitioningStrategy, cachedPartitioningStrategy);
+    }
+
+    // when an exception is thrown while attempting to instantiate a partitioning strategy
+    // then the exception is rethrown (the same if it is a RuntimeException, otherwise it is peeled,
+    // see ExceptionUtil.rethrow for all the details).
+    @Test
+    public void whenStrategyInstantiationThrowsException_getSamePartitioningStrategy_rethrowsException() {
+        NodeEngine nodeEngine = mock(NodeEngine.class);
+        RuntimeException e = new RuntimeException("expected exception");
+        Mockito.when(nodeEngine.getConfigClassLoader()).thenThrow(e);
+
+        PartitioningStrategyConfig cfg = new PartitioningStrategyConfig();
+        cfg.setPartitioningStrategyClass("com.hazelcast.partition.strategy.StringPartitioningStrategy");
+
+        // while attempting to get partitioning strategy, exception will be thrown
+        expectedException.expect(new IsSame<RuntimeException>(e));
+        getPartitioningStrategy(nodeEngine,
+                "whenStrategyInstantiationThrowsException_getSamePartitioningStrategy_rethrowsException", cfg);
+    }
 }

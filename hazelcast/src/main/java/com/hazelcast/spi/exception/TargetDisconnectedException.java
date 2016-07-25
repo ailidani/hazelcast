@@ -20,6 +20,7 @@ import com.hazelcast.core.Member;
 import com.hazelcast.nio.Address;
 
 import static com.hazelcast.util.StringUtil.timeToString;
+import static com.hazelcast.util.StringUtil.timeToStringFriendly;
 import static java.lang.String.format;
 
 /**
@@ -43,19 +44,31 @@ public class TargetDisconnectedException extends RetryableHazelcastException {
         super(message, cause);
     }
 
-    public static Exception newTargetDisconnectedExceptionCausedByHeartBeat(Address memberAddress, long lastHeartbeatMillis,
+    public static Exception newTargetDisconnectedExceptionCausedByHeartBeat(Address memberAddress,
+                                                                            String connectionString,
+                                                                            long lastHeartbeatMillis,
+                                                                            long lastReadMillis,
                                                                             Throwable cause) {
-        return new TargetDisconnectedException(format(
-                "Disconnecting from member %s due to heartbeat problems. Current time: %s. Last heartbeat: %s",
+        String msg = format(
+                "Disconnecting from member %s due to heartbeat problems. "
+                        + "Current time: %s. "
+                        + "Last heartbeat: %s. "
+                        + "Last read: %s. "
+                        + "Connection %s",
                 memberAddress,
                 timeToString(System.currentTimeMillis()),
-                (lastHeartbeatMillis == 0) ? "never" : timeToString(lastHeartbeatMillis)
-        ), cause);
+                timeToStringFriendly(lastHeartbeatMillis),
+                timeToStringFriendly(lastReadMillis),
+                connectionString);
+        return new TargetDisconnectedException(msg, cause);
     }
 
-    public static Exception newTargetDisconnectedExceptionCausedByMemberLeftEvent(Member member) {
-        return new TargetDisconnectedException(format("Closing connection to member %s."
-                + " The client has closed the connection to this member, after receiving a member left event from the cluster.",
-                member.getAddress()));
+    public static Exception newTargetDisconnectedExceptionCausedByMemberLeftEvent(Member member, String connectionString) {
+        String msg = format(
+                "Closing connection to member %s."
+                        + " The client has closed the connection to this member,"
+                        + " after receiving a member left event from the cluster. Connection=%s",
+                member.getAddress(), connectionString);
+        return new TargetDisconnectedException(msg);
     }
 }

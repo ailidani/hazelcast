@@ -14,16 +14,15 @@
  * limitations under the License.
  */
 
-package com.hazelcast.util.scheduler;
+package com.hazelcast.util;
 
-import com.hazelcast.util.Clock;
+import com.hazelcast.test.HazelcastTestSupport;
+import org.junit.Test;
 
-class StaticClock extends Clock.ClockImpl {
+public class ClockPropertiesTest extends HazelcastTestSupport {
 
-    private static final long TIME = System.currentTimeMillis();
-
-    @Override
-    protected long currentTimeMillis() {
-        return TIME;
+    @Test
+    public void testConstructor() {
+        assertUtilityConstructor(ClockProperties.class);
     }
 }

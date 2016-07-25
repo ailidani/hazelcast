@@ -37,9 +37,13 @@ import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.impl.operationservice.InternalOperationService;
 import com.hazelcast.spi.impl.operationservice.impl.OperationServiceImpl;
+import com.hazelcast.spi.impl.waitnotifyservice.impl.WaitNotifyServiceImpl;
 import com.hazelcast.spi.partition.IPartition;
 import com.hazelcast.util.EmptyStatement;
 import com.hazelcast.util.ExceptionUtil;
+import org.apache.log4j.Level;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
 import org.junit.After;
 import org.junit.ComparisonFailure;
 
@@ -49,6 +53,7 @@ import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -79,7 +84,7 @@ public abstract class HazelcastTestSupport {
 
     public static final int ASSERT_TRUE_EVENTUALLY_TIMEOUT;
 
-    private static org.apache.log4j.Level logLevel;
+    private static Level logLevel;
 
     static {
         ASSERT_TRUE_EVENTUALLY_TIMEOUT = Integer.getInteger("hazelcast.assertTrueEventually.timeout", 120);
@@ -249,19 +254,31 @@ public abstract class HazelcastTestSupport {
         System.setProperty("hazelcast.logging.type", "log4j");
     }
 
-    public static void setLogLevel(org.apache.log4j.Level level) {
+    public static void setLogLevel(Level level) {
         if (isLog4jLoaded() && logLevel == null) {
-            org.apache.log4j.Logger rootLogger = org.apache.log4j.Logger.getRootLogger();
-            logLevel = rootLogger.getLevel();
-            rootLogger.setLevel(level);
+            logLevel = setLogLevelOnAllLoggers(level);
         }
     }
 
     public static void resetLogLevel() {
         if (isLog4jLoaded() && logLevel != null) {
-            org.apache.log4j.Logger.getRootLogger().setLevel(logLevel);
+            setLogLevelOnAllLoggers(logLevel);
             logLevel = null;
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Level setLogLevelOnAllLoggers(Level level) {
+        Logger rootLogger = Logger.getRootLogger();
+        Level oldLevel = rootLogger.getLevel();
+        rootLogger.setLevel(level);
+
+        Enumeration<Logger> currentLoggers = LogManager.getCurrentLoggers();
+        while (currentLoggers.hasMoreElements()) {
+            currentLoggers.nextElement().setLevel(level);
+        }
+
+        return oldLevel;
     }
 
     private static boolean isLog4jLoaded() {
@@ -962,5 +979,26 @@ public abstract class HazelcastTestSupport {
     }
 
     public static void ignore(Throwable ignored) {
+    }
+
+    public static void assertWaitingOperationCountEventually(int expectedOpsCount, HazelcastInstance...instances) {
+        for (HazelcastInstance instance : instances) {
+            assertWaitingOperationCountEventually(expectedOpsCount, instance);
+        }
+    }
+
+    public static void assertWaitingOperationCountEventually(final int opsCount, HazelcastInstance instance) {
+        final WaitNotifyServiceImpl waitNotifyService = getWaitNotifyService(instance);
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() throws Exception {
+                assertEquals(opsCount, waitNotifyService.getTotalWaitingOperationCount());
+            }
+        });
+    }
+
+    private static WaitNotifyServiceImpl getWaitNotifyService(HazelcastInstance instance) {
+        Node node = getNode(instance);
+        return (WaitNotifyServiceImpl) node.getNodeEngine().getWaitNotifyService();
     }
 }
